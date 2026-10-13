@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pokédex Nexus — Pokémon Encyclopedia</title>
+<meta name="description" content="Unofficial fan-made Pokémon encyclopedia with search, filters, stats, evolutions, and type effectiveness.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%237C5CFC'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+<div class="app">
+<aside class="sidebar" id="sidebar">
+<div class="brand"><span class="dot"></span>Pokédex Nexus</div>
+<nav class="nav" id="nav">
+<a href="#/" data-r="/">Dashboard</a>
+<a href="#/pokedex" data-r="/pokedex">Pokédex</a>
+<a href="#/favorites" data-r="/favorites">Favorites</a>
+<a href="#/about" data-r="/about">About</a>
+</nav>
+<p class="note">Unofficial fan project. Not affiliated with Nintendo, Game Freak, or The Pokémon Company.</p>
+</aside>
+<div class="main">
+<header class="topbar">
+<button class="btn" id="menu">☰</button>
+<input id="q" type="search" placeholder="Search by Pokémon name or Pokédex number..." autocomplete="off">
+</header>
+<div class="suggest" id="suggest"></div>
+<main class="content" id="app"></main>
+<footer class="footer">Data from <a href="https://pokeapi.co/" target="_blank" rel="noopener">PokéAPI</a>. Pokémon names are trademarks of Nintendo.</footer>
+</div>
+</div>
+<script>
+const API="https://pokeapi.co/api/v2";
+const cache=new Map(),pending=new Map();
+const COLORS={normal:"#A8A77A",fire:"#EE8130",water:"#6390F0",electric:"#F7D02C",grass:"#7AC74C",ice:"#96D9D6",fighting:"#C22E28",poison:"#A33EA1",ground:"#E2BF65",flying:"#A98FF3",psychic:"#F95587",bug:"#A6B91A",rock:"#B6A136",ghost:"#735797",dragon:"#6F35FC",dark:"#705746",steel:"#B7B7CE",fairy:"#D685AD"};
+const TYPES=Object.keys(COLORS);
+const MOD={normal:{rock:.5,steel:.5,ghost:0},fire:{grass:2,ice:2,bug:2,steel:2,fire:.5,water:.5,rock:.5,dragon:.5},water:{fire:2,ground:2,rock:2,water:.5,grass:.5,dragon:.5},electric:{water:2,flying:2,electric:.5,grass:.5,dragon:.5,ground:0},grass:{water:2,ground:2,rock:2,fire:.5,grass:.5,poison:.5,flying:.5,bug:.5,dragon:.5,steel:.5},ice:{grass:2,ground:2,flying:2,dragon:2,fire:.5,water:.5,ice:.5,steel:.5},fighting:{normal:2,ice:2,rock:2,dark:2,steel:2,poison:.5,flying:.5,psychic:.5,bug:.5,fairy:.5,ghost:0},poison:{grass:2,fairy:2,poison:.5,ground:.5,rock:.5,ghost:.5,steel:0},ground:{fire:2,electric:2,poison:2,rock:2,steel:2,grass:.5,bug:.5,flying:0},flying:{grass:2,fighting:2,bug:2,electric:.5,rock:.5,steel:.5},psychic:{fighting:2,poison:2,psychic:.5,steel:.5,dark:0},bug:{grass:2,psychic:2,dark:2,fire:.5,fighting:.5,poison:.5,flying:.5,ghost:.5,steel:.5,fairy:.5},rock:{fire:2,ice:2,flying:2,bug:2,fighting:.5,ground:.5,steel:.5},ghost:{psychic:2,ghost:2,dark:.5,normal:0},dragon:{dragon:2,steel:.5,fairy:0},dark:{psychic:2,ghost:2,fighting:.5,dark:.5,fairy:.5},steel:{ice:2,rock:2,fairy:2,fire:.5,water:.5,electric:.5,steel:.5},fairy:{fighting:2,dragon:2,dark:2,fire:.5,poison:.5,steel:.5}};
+let INDEX=[],state={q:"",type:"",gen:"",sort:"id-asc",shown:24};
+async function get(path){if(cache.has(path))return cache.get(path);if(pending.has(path))return pending.get(path);const p=(async()=>{for(let i=0;i<3;i++){try{const c=new AbortController();const t=setTimeout(()=>c.abort(),12000);const r=await fetch(API+"/"+path,{signal:c.signal});clearTimeout(t);if(!r.ok)throw new Error("PokéAPI error "+r.status);const d=await r.json();cache.set(path,d);return d}catch(e){if(i===2)throw e;await new Promise(r=>setTimeout(r,400*(i+1)))}}})();pending.set(path,p);try{return await p}finally{pending.delete(path)}}
+const idOf=u=>+u.match(/\/(\d+)\/?$/)[1];
+const art=p=>p?.sprites?.other?.["official-artwork"]?.front_default||p?.sprites?.front_default||"";
+const type=t=>`<span class="type" style="background:${COLORS[t]||"#64748B"}">${t}</span>`;
+const favs=()=>JSON.parse(localStorage.getItem("pn-favs")||"[]");
+const isFav=id=>favs().includes(+id);
+function toggleFav(id){let f=favs();id=+id;f=f.includes(id)?f.filter(x=>x!==id):[...f,id];localStorage.setItem("pn-favs",JSON.stringify(f));return f.includes(id)}
+function recent(){return JSON.parse(localStorage.getItem("pn-recent")||"[]")}
+function addRecent(p){let r=recent().filter(x=>x.id!==p.id);r.unshift({id:p.id,name:p.name,img:art(p)});localStorage.setItem("pn-recent",JSON.stringify(r.slice(0,12)))}
+function effect(types){const out={weak:[],res:[],imm:[]};for(const a of TYPES){let m=1;for(const d of types)m*=MOD[a]?.[d]??1;if(m>1)out.weak.push([a,m]);else if(m<1&&m>0)out.res.push([a,m]);else if(m===0)out.imm.push([a,m])}return out}
+async function index(){if(INDEX.length)return INDEX;const d=await get("pokemon?limit=100000");INDEX=d.results.map(x=>({name:x.name,id:idOf(x.url)})).filter(x=>x.id<=10000);return INDEX}
+function card(p){const t=p.types.map(x=>x.type.name);return `<div class="card" data-id="${p.id}"><button class="fav ${isFav(p.id)?"on":""}" data-fav="${p.id}">${isFav(p.id)?"★":"☆"}</button><span class="num">#${String(p.id).padStart(4,"0")}</span><img loading="lazy" src="${art(p)}" alt="${p.name}"><h3>${p.name}</h3><div class="types">${t.map(type).join("")}</div></div>`}
+async function dashboard(){const [idx,types,gens]=await Promise.all([index(),get("type"),get("generation")]);const ids=Array.from({length:6},()=>1+Math.floor(Math.random()*idx.length));const featured=await Promise.all(ids.map(id=>get("pokemon/"+id)));
+app.innerHTML=`<section class="hero"><h1>Discover the World of Pokémon</h1><p>Your ultimate destination for Pokémon data, evolutions, stats, abilities, and more.</p><p><a class="btn primary" href="#/pokedex">Explore Pokédex</a></p></section><div class="stats"><div class="stat-card"><strong>${idx.length}</strong><span>Pokémon loaded</span></div><div class="stat-card"><strong>${types.results.length}</strong><span>Types</span></div><div class="stat-card"><strong>${gens.results.length}</strong><span>Generations</span></div><div class="stat-card"><strong>${favs().length}</strong><span>Favorites</span></div></div><h2>Featured Pokémon</h2><div class="grid">${featured.map(card).join("")}</div><h2>Recently viewed</h2><div class="grid">${recent().map(r=>`<div class="card" data-id="${r.id}"><img loading="lazy" src="${r.img}" alt="${r.name}"><h3>${r.name}</h3></div>`).join("")||'<div class="empty">No recently viewed Pokémon yet.</div>'}</div>`}
+async function pokedex(){app.innerHTML=`<h2>Pokédex</h2><div class="toolbar"><input id="pq" placeholder="Search name or number" value="${state.q}"><select id="ft"><option value="">All types</option>${TYPES.map(t=>`<option ${state.type===t?"selected":""}>${t}</option>`).join("")}</select><select id="fg"><option value="">All generations</option>${[1,2,3,4,5,6,7,8,9].map(n=>`<option value="${n}" ${state.gen==n?"selected":""}>Generation ${n}</option>`).join("")}</select><select id="fs"><option value="id-asc">Number ↑</option><option value="id-desc">Number ↓</option><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="bst">Base stat total</option><option value="height">Height</option><option value="weight">Weight</option></select></div><div class="grid" id="grid"></div><div id="status"></div><p style="text-align:center"><button class="btn primary" id="more" hidden>Load more</button></p>`;
+const grid=document.getElementById("grid"),status=document.getElementById("status"),more=document.getElementById("more");
+async function load(){grid.innerHTML=Array(12).fill('<div class="skeleton"></div>').join("");status.textContent="";more.hidden=true;try{let list=[...await index()];if(state.type){const d=await get("type/"+state.type);const ok=new Set(d.pokemon.map(x=>idOf(x.pokemon.url)));list=list.filter(x=>ok.has(x.id))}if(state.gen){const d=await get("generation/"+state.gen);const ok=new Set(d.pokemon_species.map(x=>idOf(x.url)));list=list.filter(x=>ok.has(x.id))}const q=state.q.trim().toLowerCase();if(q)list=list.filter(x=>x.name.includes(q)||String(x.id)===q||String(x.id).padStart(4,"0")===q);
+if(["id-asc","id-desc","name-asc","name-desc"].includes(state.sort)){list.sort((a,b)=>state.sort==="name-asc"?a.name.localeCompare(b.name):state.sort==="name-desc"?b.name.localeCompare(a.name):state.sort==="id-desc"?b.id-a.id:a.id-b.id)}else{const details=await Promise.all(list.slice(0,240).map(x=>get("pokemon/"+x.id)));const m=new Map(details.map(d=>[d.id,d]));list=list.slice(0,240).sort((a,b)=>{const x=m.get(a.id),y=m.get(b.id);if(!x||!y)return 0;if(state.sort==="bst")return y.stats.reduce((s,v)=>s+v.base_stat,0)-x.stats.reduce((s,v)=>s+v.base_stat,0);if(state.sort==="height")return y.height-x.height;if(state.sort==="weight")return y.weight-x.weight;return 0})}
+const visible=list.slice(0,state.shown);if(!visible.length){grid.innerHTML="";status.innerHTML='<div class="empty">No Pokémon match your filters.</div>';return}const details=await Promise.all(visible.map(x=>get("pokemon/"+x.id)));grid.innerHTML=details.map(card).join("");more.hidden=state.shown>=list.length;status.innerHTML=`<p style="color:var(--muted)">${visible.length} of ${list.length} shown</p>`}catch(e){grid.innerHTML="";status.innerHTML=`<div class="error">Could not load Pokémon. ${e.message}</div>`}}
+document.getElementById("pq").oninput=e=>{state.q=e.target.value;state.shown=24;load()};
+document.getElementById("ft").onchange=e=>{state.type=e.target.value;state.shown=24;load()};
+document.getElementById("fg").onchange=e=>{state.gen=e.target.value;state.shown=24;load()};
+document.getElementById("fs").onchange=e=>{state.sort=e.target.value;state.shown=24;load()};
+more.onclick=()=>{state.shown+=24;load()};await load()}
+async function details(id){app.innerHTML='<div class="skeleton"></div>';const p=await get("pokemon/"+id),sp=await get("pokemon-species/"+id),ev=await get(sp.evolution_chain.url);addRecent(p);
+const types=p.types.map(x=>x.type.name),e=effect(types),total=p.stats.reduce((s,x)=>s+x.base_stat,0);const abilities=await Promise.all(p.abilities.map(a=>get("ability/"+a.ability.name)));
+const evo=[];(function walk(n,cond){evo.push({name:n.species.name,id:idOf(n.species.url),cond});n.evolves_to.forEach(x=>{const d=x.evolution_details[0];walk(x,d?d.trigger.name==="level-up"?"Level "+(d.min_level??"—"):d.trigger.name.replace(/-/g," "):"")})})(ev.chain);
+const versions=[...new Set(p.moves.flatMap(m=>m.version_group_details.map(d=>d.version_group.name)))];const entries=sp.flavor_text_entries.filter(x=>x.language.name==="en").slice(-3).reverse();
+app.innerHTML=`<p><a class="btn" href="#/pokedex">← Pokédex</a></p><section class="detail"><div style="display:flex;gap:24px;flex-wrap:wrap"><img src="${art(p)}" alt="${p.name}"><div><span class="num">#${String(p.id).padStart(4,"0")}</span><h1 style="text-transform:capitalize">${p.name}</h1><div class="types">${types.map(type).join("")}</div><p><button class="btn ${isFav(id)?"":"primary"}" id="favBtn">${isFav(id)?"★ Remove favorite":"☆ Add favorite"}</button></p></div></div><div class="meta"><div><span>Height</span><strong>${p.height/10} m</strong></div><div><span>Weight</span><strong>${p.weight/10} kg</strong></div><div><span>Base XP</span><strong>${p.base_experience??"Unavailable"}</strong></div><div><span>Generation</span><strong>${sp.generation.name.replace("generation-","Generation ")}</strong></div><div><span>Capture rate</span><strong>${sp.capture_rate??"Unavailable"}</strong></div><div><span>Base friendship</span><strong>${sp.base_happiness??"Unavailable"}</strong></div><div><span>Egg groups</span><strong>${sp.egg_groups.map(x=>x.name).join(", ")||"Unavailable"}</strong></div></div></section>
+<section class="detail"><h2>Base stats</h2>${p.stats.map(s=>`<div class="bar"><div><span>${s.stat.name.replace("-"," ")}</span><strong>${s.base_stat}</strong></div><div class="track"><div class="fill" style="width:${Math.min(100,s.base_stat/255*100)}%"></div></div></div>`).join("")}<div class="bar"><div><span>Total</span><strong>${total}</strong></div><div class="track"><div class="fill" style="width:${Math.min(100,total/780*100)}%"></div></div></div></section>
+<section class="detail"><h2>Type effectiveness</h2><p>Standard post-Generation VI defensive matchups.</p>${e.weak.filter(x=>x[1]===4).map(x=>`<span class="chip bad">${x[0]} ×4</span>`).join("")}${e.weak.filter(x=>x[1]===2).map(x=>`<span class="chip bad">${x[0]} ×2</span>`).join("")}${e.res.filter(x=>x[1]===.5).map(x=>`<span class="chip good">${x[0]} ×0.5</span>`).join("")}${e.res.filter(x=>x[1]===.25).map(x=>`<span class="chip good">${x[0]} ×0.25</span>`).join("")}${e.imm.map(x=>`<span class="chip none">${x[0]} immune</span>`).join("")}</section>
+<section class="detail"><h2>Abilities</h2>${abilities.map(a=>{const hidden=p.abilities.find(x=>x.ability.name===a.name).is_hidden;const desc=a.effect_entries.find(x=>x.language.name==="en")?.short_effect||a.flavor_text_entries.find(x=>x.language.name==="en")?.flavor_text||"Description unavailable.";return `<div class="meta"><div><span>${hidden?"Hidden ability":"Ability"}</span><strong style="text-transform:capitalize">${a.name.replace(/-/g," ")}</strong><p style="color:var(--muted)">${desc}</p></div></div>`}).join("")}</section>
+<section class="detail"><h2>Evolution chain</h2><div class="evo">${evo.map((x,i)=>`${i?'<span style="color:var(--muted)">→</span>':""}<div class="card" data-id="${x.id}"><img loading="lazy" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${x.id}.png" alt="${x.name}"><h3>${x.name.replace(/-/g," ")}</h3><span class="num">${x.cond||""}</span></div>`).join("")}</div></section>
+<section class="detail"><h2>Pokédex entries</h2>${entries.map(x=>`<div class="meta"><div><span>${x.version.name}</span><p>${x.flavor_text.replace(/\f/g," ")}</p></div></div>`).join("")||'<div class="empty">No English entries available.</div>'}</section>
+<section class="detail"><h2>Moves</h2><select id="vg" class="btn">${versions.map(v=>`<option>${v}</option>`).join("")}</select><div id="moves" style="margin-top:14px"></div></section>`;
+document.getElementById("favBtn").onclick=e=>{const on=toggleFav(id);e.target.textContent=on?"★ Remove favorite":"☆ Add favorite";e.target.classList.toggle("primary",!on)};
+app.querySelectorAll(".evo .card").forEach(c=>c.onclick=()=>location.hash="#/pokemon/"+c.dataset.id);
+async function moves(){const v=document.getElementById("vg").value;const rows=p.moves.map(m=>{const d=m.version_group_details.find(x=>x.version_group.name===v);return d?{m,d}:null}).filter(Boolean).slice(0,150);const data=await Promise.all(rows.map(r=>get(r.m.move.url)));document.getElementById("moves").innerHTML=`<table><tr><th>Move</th><th>Type</th><th>Category</th><th>Power</th><th>Accuracy</th><th>PP</th><th>Learned</th></tr>${data.map((x,i)=>`<tr><td style="text-transform:capitalize">${x.name.replace(/-/g," ")}</td><td>${type(x.type.name)}</td><td>${x.damage_class.name}</td><td>${x.power??"—"}</td><td>${x.accuracy??"—"}</td><td>${x.pp??"—"}</td><td>${rows[i].d.level_learned_at||rows[i].d.move_learn_method.name}</td></tr>`).join("")}</table>`}
+document.getElementById("vg").onchange=moves;await moves()}
+async function favorites(){const f=favs();app.innerHTML=`<h2>Favorites</h2><p style="color:var(--muted)">Saved only in this browser.</p><div class="grid" id="fg"></div>`;const grid=document.getElementById("fg");if(!f.length){grid.innerHTML='<div class="empty">No favorites yet.</div>';return}const data=await Promise.all(f.map(id=>get("pokemon/"+id)));grid.innerHTML=data.map(card).join("")}
+function about(){app.innerHTML=`<section class="detail"><h2>About</h2><p>Pokédex Nexus is an unofficial fan-made Pokémon encyclopedia. It fetches live data from PokéAPI and caches responses in your browser.</p><p>Not affiliated with Nintendo, Game Freak, or The Pokémon Company.</p><p>Because profiles are rendered in the browser, search engines may index this page more reliably than individual Pokémon profile views.</p></section>`}
+async function route(){const hash=location.hash.replace(/^#/,"")||"/";document.querySelectorAll("#nav a").forEach(a=>a.classList.toggle("active",a.dataset.r===hash));app.innerHTML='<div class="skeleton"></div>';try{if(hash==="/")await dashboard();else if(hash==="/pokedex")await pokedex();else if(hash.startsWith("/pokemon/"))await details(hash.split("/")[2]);else if(hash==="/favorites")await favorites();else if(hash==="/about")about();else app.innerHTML='<div class="error">Page not found. <a href="#/">Go home</a></div>'}catch(e){app.innerHTML=`<div class="error">Could not load this page. ${e.message}</div>`}}
+document.addEventListener("click",e=>{const f=e.target.closest("[data-fav]");if(f){e.stopPropagation();const on=toggleFav(f.dataset.fav);f.classList.toggle("on",on);f.textContent=on?"★":"☆";return}const c=e.target.closest(".card[data-id]");if(c)location.hash="#/pokemon/"+c.dataset.id});
+document.getElementById("menu").onclick=()=>document.getElementById("sidebar").classList.toggle("open");
+const q=document.getElementById("q"),sg=document.getElementById("suggest");let timer;
+q.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(async()=>{const v=q.value.trim().toLowerCase();if(!v){sg.style.display="none";return}const list=(await index()).filter(p=>p.name.includes(v)||String(p.id)===v||String(p.id).padStart(4,"0")===v).slice(0,8);sg.innerHTML=list.map(p=>`<div data-id="${p.id}">#${String(p.id).padStart(4,"0")} ${p.name}</div>`).join("")||'<div>No results</div>';sg.style.display="block"},200)});
+sg.addEventListener("click",e=>{if(e.target.dataset.id){location.hash="#/pokemon/"+e.target.dataset.id;sg.style.display="none";q.value=""}});
+document.addEventListener("click",e=>{if(!e.target.closest(".topbar")&&!e.target.closest(".suggest"))sg.style.display="none"});
+window.addEventListener("hashchange",route);route();
+</script>
+</body>
+</html>
